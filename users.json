@@ -1,0 +1,22 @@
+{
+  "7693086158": {
+    "name": "OWER",
+    "username": "abonentan",
+    "age": 10,
+    "city": "Аксу",
+    "about": "ыав",
+    "photo": null,
+    "step": "done",
+    "premium": true,
+    "premium_until": "lifetime"
+  },
+  "1239785353": {
+    "name": "/start",
+    "username": "wkxnk",
+    "age": 9,
+    "city": "аксу",
+    "about": "попа001",
+    "photo": "AgACAgIAAxkBAAIDE2i_122k6SBdHI5KKmjQIeY4i3eKAAIX8zEbvfIAAUojxXX-MBxNTQEAAwIAA3cAAzYE",
+    "step": "done"
+  }
+}
