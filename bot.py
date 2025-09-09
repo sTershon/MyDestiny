@@ -2,9 +2,8 @@ import os
 from functools import wraps
 import telebot
 from telebot import types
-from dotenv import load_dotenv
-import re  # вверху файла
-import json, os, datetime
+import re
+import json, datetime
 
 DB_FILE = "users.json"
 LIKES_FILE = "likes.json"
@@ -34,9 +33,10 @@ def save_data():
     with open(LIKES_FILE, "w", encoding="utf-8") as f:
         json.dump(likes, f, ensure_ascii=False, indent=2)
 
-# Загружаем токен
-load_dotenv()
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+# Получаем токен из окружения Railway
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+if not BOT_TOKEN:
+    raise ValueError("Переменная окружения BOT_TOKEN не задана!")
 bot = telebot.TeleBot(BOT_TOKEN)
 
 # Храним профили и лайки
@@ -581,3 +581,4 @@ def unknown_command(message):
 # ---------- ЗАПУСК БОТА ----------
 load_data()
 bot.polling(none_stop=True)
+
