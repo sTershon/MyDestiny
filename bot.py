@@ -1,48 +1,275 @@
 import os
 from functools import wraps
 import telebot
+import time
+import random
+import threading
+
 from telebot import types
+from dotenv import load_dotenv
 import re
 import json, datetime
 
+
 DB_FILE = "users.json"
 LIKES_FILE = "likes.json"
+REFS_FILE = "refs.json"
 
 pending_questions = {}  # {user_id: target_id}
 pending_answers = {}    # {user_id: (target_id, mode)}
 
 # загрузка базы
+# Загружаем базу
 def load_data():
-    global users, likes
+    global users, refs
     if os.path.exists(DB_FILE):
         with open(DB_FILE, "r", encoding="utf-8") as f:
             users = json.load(f)
     else:
         users = {}
 
-    if os.path.exists(LIKES_FILE):
-        with open(LIKES_FILE, "r", encoding="utf-8") as f:
-            likes = json.load(f)
+    if os.path.exists(REFS_FILE):
+        with open(REFS_FILE, "r", encoding="utf-8") as f:
+            refs = json.load(f)
     else:
-        likes = {}
+        refs = {}
 
-# сохранение базы
+# ---------- сохранение базы ----------
 def save_data():
     with open(DB_FILE, "w", encoding="utf-8") as f:
-        json.dump(users, f, ensure_ascii=False, indent=2)
-    with open(LIKES_FILE, "w", encoding="utf-8") as f:
-        json.dump(likes, f, ensure_ascii=False, indent=2)
+        json.dump(users, f, indent=4, ensure_ascii=False)
+    with open(REFS_FILE, "w", encoding="utf-8") as f:
+        json.dump(refs, f, indent=4, ensure_ascii=False)
 
-# Получаем токен из окружения Railway
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
-if not BOT_TOKEN:
-    raise ValueError("Переменная окружения BOT_TOKEN не задана!")
-bot = telebot.TeleBot(BOT_TOKEN)
+
+def fake_likes():
+    if not users:
+        return
+    real_users = [uid for uid in users if not uid.startswith("fake_")]
+    fake_users = [uid for uid in users if uid.startswith("fake_")]
+
+    for fake in fake_users:
+        if real_users:
+            target = random.choice(real_users)
+            if target not in likes:
+                likes[target] = []
+            if fake not in likes[target]:
+                likes[target].append(fake)
+    save_data()
+
+
+# ---------- ФЕЙКОВЫЕ ПОЛЬЗОВАТЕЛИ ----------
+def add_fake_users():
+    fake_data = [
+        {"name": "Аня", "age": 22, "city": "Алматы", "about": "Люблю читать книги и гулять 🥰", "chance": 0.7},
+        {"name": "Дима", "age": 18, "city": "Астана", "about": "Фанат спорта и путешествий ✈️", "chance": 0.3},
+        {"name": "Катя", "age": 25, "city": "Шымкент", "about": "Люблю готовить и смотреть сериалы 🍰", "chance": 0.5},
+        {"name": "Игорь", "age": 21, "city": "Караганда", "about": "Работаю в IT, люблю игры 👾", "chance": 0.2},
+        {"name": "Саша", "age": 21, "city": "Кокшетау", "about": "Весёлый и активный человек 🔥", "chance": 0.4},
+        {"name": "Валентин", "age": 17, "city": "Астана", "about": "Люблю проводить время с компом 👾", "chance": 0.2},
+        {"name": "Deni", "age": 21, "city": "Павлодар", "about": "хз че сказать ", "chance": 0.4},
+        {"name": "Лариса", "age": 30, "city": "Риддер", "about": "Люблю салаты 👾", "chance": 0.2},
+        {"name": "Голубь", "age": 20, "city": "Уральск", "about": "От скуки ", "chance": 0.4},
+        {"name": "Сопля", "age": 19, "city": "Тараз", "about": "Норм бот 👾", "chance": 0.2},
+        {"name": "Алидамир", "age": 18, "city": "Семей", "about": "Покатаемсся? ", "chance": 0.4},
+        {"name": "Игорюня", "age": 21, "city": "Караганда", "about": "Хз крутой чел", "chance": 0.2},
+        {"name": "Тот самый", "age": 21, "city": "Костанай", "about": "Весёлый ", "chance": 0.4},
+        {"name": "Узбек", "age": 19, "city": "Актау", "about": "Работаю", "chance": 0.2},
+        {"name": "палас", "age": 21, "city": "Петропавловск", "about": "Общение", "chance": 0.4},
+        {"name": "Максим", "age": 20, "city": "Коктобе", "about": "Джейсон стетхем!", "chance": 0.2},
+        {"name": "Сергей", "age": 21, "city": "Аксу", "about": "Люблю помидоры)", "chance": 0.4},
+        {"name": "Костя)", "age": 19, "city": "Павлодар", "about": "Овощоед", "chance": 0.2},
+        {"name": "Шаурма", "age": 21, "city": "Ашу", "about": "Hay gitlers!", "chance": 0.4},
+        {"name": "Петя", "age": 21, "city": "Алмата", "about": "Привет го общюху!", "chance": 0.4},
+        {"name": "Костян", "age": 21, "city": "Ашу", "about": "по городу", "chance": 0.4},
+        {"name": "Думка", "age": 21, "city": "Ашу", "about": "Пишите у меня бан", "chance": 0.4},
+    ]
+
+    for i, profile in enumerate(fake_data, start=1):
+        fake_id = f"fake_{i}"
+        if fake_id not in users:
+            users[fake_id] = {
+                "name": profile["name"],
+                "age": profile["age"],
+                "city": profile["city"],
+                "about": profile["about"],
+                "photo": None,
+                "premium": False,
+                "step": "done",
+                "chance": profile["chance"],  # шанс на взаимный лайк
+            }
+    save_data()
+
+
+# ---------- запуск ----------
+load_dotenv()
+
+# Загружаем токен
 
 # Храним профили и лайки
 users = {}
 likes = {}
 
+
+load_data()
+
+add_fake_users()
+
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+bot = telebot.TeleBot(BOT_TOKEN)
+
+user_likes = {}        # {user_id: [timestamps]}
+blocked_users = {}     # {user_id: unblock_time}
+invites_used = {}      # {invitee_id: inviter_id}
+invite_links = {}      # {inviter_id: set(invitees)}
+likes_count = {}       # {user_id: int}   
+refs = {} 
+
+LIKE_LIMIT = 5
+BLOCK_TIME = 1800  # 30 минут в секундах
+
+CHANNEL_ID = "-1002748732031"  # username канала или -100XXXXXXXXXXX
+OWNER_ID = 7693086158  # <- замени на своё число после получения через /myid
+ADMIN_ID = 7693086158  # замени на свой
+
+
+# ---------- Проверка лимита ----------
+def like_user(user_id):
+    now = time.time()
+    me = bot.get_me()
+    bot_username = me.username
+
+    # если есть блокировка
+    if user_id in blocked_users:
+        if now < blocked_users[user_id]:
+            wait_time = int((blocked_users[user_id] - now) / 60)
+            return f"🚫 Лимит лайков достигнут! Подождите {wait_time} мин.\n" \
+                   f"Или пригласите друга, чтобы снять блокировку:\n" \
+                   f"https://t.me/{bot_username}?start=invite_{user_id}"
+        else:
+            del blocked_users[user_id]
+            likes_count[user_id] = 0
+
+    # увеличиваем лайки
+    likes_count[user_id] = likes_count.get(user_id, 0) + 1
+
+    if likes_count[user_id] > LIKE_LIMIT:
+        blocked_users[user_id] = now + BLOCK_TIME
+        return f"⚠️ Ты поставил {LIKE_LIMIT} лайков!\n" \
+               f"Подожди 30 минут или пригласи друга по ссылке:\n" \
+               f"https://t.me/{bot_username}?start=invite_{user_id}"
+
+    return "💖 Лайк засчитан!"
+
+
+
+# ---------- Добавление лайка ----------
+def add_like(user_id):
+    now = time.time()
+    user_likes.setdefault(user_id, []).append(now)
+
+
+# ---------- Генерация ссылки ----------
+def get_invite_link(user_id):
+    return f"https://t.me/{bot.get_me().username}?start=invite_{user_id}"
+
+
+# Проверка: вернёт твой id (используй в личке)
+@bot.message_handler(commands=['myid'])
+def cmd_myid(message):
+    bot.reply_to(message, f"Твой chat.id: {message.chat.id}")
+
+# Покажет данные бота
+@bot.message_handler(commands=['whoami'])
+def cmd_whoami(message):
+    me = bot.get_me()
+    bot.reply_to(message, f"Bot username: @{me.username}\nBot id: {me.id}")
+
+# Диагностика канала + права бота
+@bot.message_handler(commands=['check_channel'])
+def cmd_check_channel(message):
+    # защитим команду — только владелец
+    if message.from_user.id != OWNER_ID:
+        bot.reply_to(message, "Только владелец может выполнять эту команду.")
+        return
+
+    try:
+        chat = bot.get_chat(CHANNEL_ID)
+        info = f"Channel: {getattr(chat, 'title', 'no title')}\nID: {chat.id}\nType: {chat.type}"
+        bot.reply_to(message, f"OK — канал найден.\n{info}")
+    except Exception as e:
+        bot.reply_to(message, f"Ошибка get_chat: {e}")
+        return
+
+    try:
+        me = bot.get_me()
+        member = bot.get_chat_member(CHANNEL_ID, me.id)
+        bot.reply_to(message, f"Статус бота в канале: {member.status}")
+    except Exception as e:
+        bot.reply_to(message, f"Ошибка get_chat_member: {e}")
+
+# Команда публикации апдейта (только владелец)
+@bot.message_handler(commands=['update'])
+def cmd_update(message):
+    if message.from_user.id != OWNER_ID:
+        bot.reply_to(message, "Только владелец может публиковать в канал.")
+        return
+
+    version = "1.3"
+    changes = [
+        "✨ Добавлена система взаимных лайков",
+        "🔹 Исправлены баги с анкетами",
+        "🚀 Добавлены фейковые пользователи для теста"
+    ]
+    text = f"🚀 <b>Обновление {version}</b>\n\n" + "\n".join(changes) + "\n\nСпасибо, что вы с нами ❤️"
+
+    try:
+        bot.send_message(CHANNEL_ID, text, parse_mode="HTML")
+        bot.reply_to(message, "✅ Пост опубликован в канал.")
+    except Exception as e:
+        bot.reply_to(message, f"❌ Ошибка при отправке в канал: {e}")
+
+# ---------- Команда /announce ----------
+@bot.message_handler(commands=["announce"])
+def announce_start(message):
+    if message.from_user.id != ADMIN_ID:
+        bot.reply_to(message, "❌ У тебя нет прав на публикацию.")
+        return
+
+    msg = bot.reply_to(message, "📢 Введи <b>заголовок</b> поста:", parse_mode="HTML")
+    bot.register_next_step_handler(msg, announce_get_title)
+
+
+def announce_get_title(message):
+    title = message.text
+    msg = bot.reply_to(message, "✍️ Теперь введи <b>текст поста</b>:", parse_mode="HTML")
+    bot.register_next_step_handler(msg, announce_get_description, title)
+
+
+def announce_get_description(message, title):
+    description = message.text
+    msg = bot.reply_to(message, "🔗 Если хочешь, укажи ссылку (или напиши - нет):")
+    bot.register_next_step_handler(msg, announce_publish, title, description)
+
+
+def announce_publish(message, title, description):
+    link = message.text.strip()
+    if link.lower() == "нет":
+        link = None
+
+    # Красивая кнопка
+    keyboard = None
+    if link:
+        keyboard = types.InlineKeyboardMarkup()
+        keyboard.add(types.InlineKeyboardButton("🔗 Подробнее", url=link))
+
+    text = f"📢 <b>{title}</b>\n\n{description}"
+
+    try:
+        bot.send_message(CHANNEL_ID, text, parse_mode="HTML", reply_markup=keyboard)
+        bot.reply_to(message, "✅ Пост опубликован в канал!")
+    except Exception as e:
+        bot.reply_to(message, f"❌ Ошибка при публикации: {e}")
 
 # ---------- PREMIUM ----------
 def give_premium(user_id, days):
@@ -152,15 +379,40 @@ def confirm_premium(call):
     bot.send_message(user_id, "🎉 Премиум активирован! Добро пожаловать 💎")
 
 # ---------- РЕГИСТРАЦИЯ ----------
+import time
+
+LIKE_LIMIT = 5  # лимит лайков
+BLOCK_TIME = 1800  # 30 минут
+
+refs = {}  # { inviter_id: [список приглашённых] }
+
+# --- Обработка реферальной ссылки ---
 @bot.message_handler(commands=['start'])
 def start(message):
     user_id = str(message.chat.id)
+    args = message.text.split()
+
+    # переход по ссылке вида /start invite_12345
+    if len(args) > 1 and args[1].startswith("invite_"):
+        inviter_id = args[1].replace("invite_", "")
+        if inviter_id != user_id:
+            refs.setdefault(inviter_id, [])
+            if user_id not in refs[inviter_id]:
+                refs[inviter_id].append(user_id)
+                # снимаем блокировку у пригласившего
+                if inviter_id in blocked_users:
+                    del blocked_users[inviter_id]
+                bot.send_message(inviter_id, f"🎉 К тебе присоединился друг @{message.from_user.username or user_id}, блокировка снята!")
+
+    # регистрация
     if user_id not in users or users[user_id].get("step") != "done":
-        users[user_id] = {}  # создаём пустую анкету
+        users[user_id] = {}
+        save_data()
         bot.send_message(user_id, "Привет! Давай начнём регистрацию 😊\n\nКак тебя зовут?")
         bot.register_next_step_handler(message, get_name)
-    else:
-        bot.send_message(user_id, "Добро пожаловать обратно!", reply_markup=main_menu(user_id))
+        return
+
+    bot.send_message(user_id, "Добро пожаловать обратно!", reply_markup=main_menu(user_id))
 
 def get_name(message):
     user_id = str(message.chat.id)
@@ -240,15 +492,46 @@ def get_photo(message):
 
 
 # ---------- ПРОФИЛЬ И ПОИСК ----------
-def profile_keyboard(user_id):
+def profile_keyboard(user_id, liked=False):
     keyboard = types.InlineKeyboardMarkup()
-    like_btn = types.InlineKeyboardButton("❤️ Лайк", callback_data=f"like_{user_id}")
+    if liked:
+        like_btn = types.InlineKeyboardButton("✅ Лайк поставлен", callback_data="liked")
+    else:
+        like_btn = types.InlineKeyboardButton("❤️ Лайк", callback_data=f"like_{user_id}")
+    keyboard.add(like_btn)
     keyboard.add(types.InlineKeyboardButton("❓ Задать анонимный вопрос", callback_data=f"ask:{user_id}"))
-    next_btn = types.InlineKeyboardButton("➡️ Далее", callback_data="next")
-    keyboard.add(like_btn, next_btn)
+    keyboard.add(types.InlineKeyboardButton("➡️ Далее", callback_data="next"))
     return keyboard
 
+@bot.callback_query_handler(func=lambda call: call.data.startswith("like_"))
+def callback_like(call):
+    target_id = call.data.split("_")[1]
+    liker_id = str(call.from_user.id)
 
+    # проверка лимита лайков
+    if "likes_today" not in users[liker_id]:
+        users[liker_id]["likes_today"] = 0
+    if users[liker_id]["likes_today"] >= 5:
+        blocked_until = users[liker_id].get("blocked_until")
+        if not blocked_until:
+            users[liker_id]["blocked_until"] = time.time() + 1800  # 30 мин
+            save_data()
+            blocked_until = users[liker_id]["blocked_until"]
+
+        if time.time() < blocked_until:
+            wait_minutes = int((blocked_until - time.time()) // 60)
+            invite_link = f"https://t.me/{bot.get_me().username}?start={liker_id}"
+            bot.send_message(
+                liker_id,
+                f"⛔ У тебя превышен лимит (5 лайков). Подожди {wait_minutes} мин.\n\n"
+                f"Или пригласи друга, чтобы снять блокировку:\n{invite_link}"
+            )
+            return
+
+    # если всё норм → лайк
+    users[liker_id]["likes_today"] += 1
+    save_data()
+    bot.send_message(liker_id, f"❤️ Ты поставил лайк пользователю {target_id}")
 
 def show_profile(chat_id, user_id, viewer_id=None):
     data = users.get(str(user_id), {})
@@ -336,22 +619,37 @@ def process_answer(message):
     bot.send_message(target_id, answer_text)
     bot.send_message(responder_id, "✅ Ответ отправлен!")
 
+# --- просмотренные анкеты ---
+seen_profiles = {}  # {user_id: [list of viewed ids]}
+
+
 # ---------- ПОИСК ----------
 @bot.message_handler(func=lambda m: m.text == "🔍 Поиск")
 @require_registration
 def search(message):
     user_id = str(message.chat.id)
+
+    # если юзер ещё не начинал поиск — создаём список
+    if user_id not in seen_profiles:
+        seen_profiles[user_id] = []
+
+    # кандидаты: все кроме себя
     candidates = [uid for uid in users if uid != user_id]
+
+    # убираем уже просмотренных
+    candidates = [c for c in candidates if c not in seen_profiles[user_id]]
+
     if not candidates:
-        bot.send_message(user_id, "Пока нет анкет для просмотра 🙂")
+        bot.send_message(user_id, "Ты уже посмотрел все анкеты 🤷")
         return
-    if user_id not in likes:
-        likes[user_id] = []
-    for candidate_id in candidates:
-        if candidate_id not in likes[user_id]:
-            show_profile(user_id, candidate_id)
-            return
-    bot.send_message(user_id, "Ты уже посмотрел все анкеты 🤷")
+
+    # берём первого из списка
+    candidate_id = candidates[0]
+
+    # добавляем в просмотренные
+    seen_profiles[user_id].append(candidate_id)
+
+    show_profile(user_id, candidate_id)
 
 
 # ---------- ЛАЙКИ ----------
@@ -536,7 +834,7 @@ def back_to_menu(message):
 @bot.callback_query_handler(func=lambda call: call.data.startswith("like_"))
 def like_profile(call):
     user_id = str(call.message.chat.id)
-    target_id = call.data.split("_")[1]
+    target_id = call.data.split("_", 1)[1]
 
     likes.setdefault(user_id, []).append(target_id)
 
@@ -550,13 +848,30 @@ def like_profile(call):
         me_link = f'<a href="tg://user?id={user_id}">{me.get("name", "Пользователь")}</a>'
 
     # --- уведомление ---
-    bot.send_message(
-        target_id,
-        f"💌 Твоя анкета понравилась {me_link}!",
-        parse_mode="HTML"
-    )
+    try:
+        if not str(target_id).startswith("fake_"):
+            bot.send_message(
+                int(target_id),
+                f"💌 Твоя анкета понравилась {me_link}!",
+                parse_mode="HTML"
+            )
+    except Exception as e:
+        print(f"❌ Ошибка при отправке сообщения {target_id}: {e}")
 
-    # --- если взаимный лайк ---
+    # --- авто-ответ фейков ---
+    if str(target_id).startswith("fake_"):
+        import random
+        chance = target.get("chance", 0.5)  # по умолчанию 50%
+        if random.random() < chance:
+            likes.setdefault(target_id, []).append(user_id)
+            bot.send_message(
+                user_id,
+                f"🎉 У тебя взаимный лайк с {target.get('name', 'Пользователь')}!",
+                parse_mode="HTML"
+            )
+            return
+
+    # --- если взаимный лайк с реальным ---
     if user_id in likes.get(target_id, []):
         if call.from_user.username:
             target_link = f'<a href="https://t.me/{call.from_user.username}">{target.get("name", "Пользователь")}</a>'
@@ -564,13 +879,22 @@ def like_profile(call):
             target_link = f'<a href="tg://user?id={target_id}">{target.get("name", "Пользователь")}</a>'
 
         bot.send_message(user_id, f"🎉 У тебя взаимный лайк с {target_link}!", parse_mode="HTML")
-        bot.send_message(target_id, f"🎉 У тебя взаимный лайк с {me_link}!", parse_mode="HTML")
+
+        if not str(target_id).startswith("fake_"):
+            bot.send_message(target_id, f"🎉 У тебя взаимный лайк с {me_link}!", parse_mode="HTML")
 
     search(call.message)
+
 
 @bot.callback_query_handler(func=lambda call: call.data == "next")
 def next_profile(call):
     search(call.message)
+
+def schedule_fake_likes():
+    fake_likes()
+    threading.Timer(300, schedule_fake_likes).start()  # каждые 5 минут
+
+schedule_fake_likes()
 
 @bot.message_handler(func=lambda message: True)
 def unknown_command(message):
@@ -579,6 +903,6 @@ def unknown_command(message):
         bot.send_message(message.chat.id, "Команда не найдена. Попробуйте /menu")
 
 # ---------- ЗАПУСК БОТА ----------
-load_data()
+
 bot.polling(none_stop=True)
 
